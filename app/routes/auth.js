@@ -3,13 +3,14 @@
 var Discogs = require('disconnect').Client;
 var express = require('express');
 var router = express.Router();
+var User = require('../models/user');
+
 var debug = require('debug')('backend-vinyl');
 
 var requestData, accessData;
 
 router.get('/', function(req, res) {
   var dis = new Discogs();
-  console.log(process.env.DISCOGS_KEY);
   dis.getRequestToken(
     process.env.DISCOGS_KEY,
     process.env.DISCOGS_SECRET,
@@ -33,14 +34,18 @@ router.get('/callback', function(req, res) {
       requestData,
       req.query.oauth_verifier, // Verification code sent back by Discogs
       function(err, _accessData) {
-        accessData = _accessData;
-        // From this point on we no longer need "requestData", so it can be deleted.
-        // Persist "accessData" here for following OAuth calls
-        debug('access token received: ' + accessData);
-        res.send('Received access token! ' + accessData);
+
+        req.session.DISCOGS_ACCESS = accessData = _accessData;
+        var dis = new Discogs(req.session.DISCOGS_ACCESS);
+        dis.identity(function(err, data){
+          req.session.username = data.username;
+          res.redirect('/me/collection');
+        });
+
       }
     );
 });
+
 
 
 module.exports = router;
