@@ -9,10 +9,12 @@ var requestData, accessData;
 
 router.get('/', function(req, res) {
   var dis = new Discogs();
+  console.log(process.env.DISCOGS_KEY);
   dis.getRequestToken(
-    'DsEvNWcHepADZKygepwO',
-    'lcgkGWEVfGwHNQgJwHuHIxEjXzGSDjtq',
-    'http://localhost:3000/auth/callback',
+    process.env.DISCOGS_KEY,
+    process.env.DISCOGS_SECRET,
+    process.env.DISCOGS_CALLBACK,
+
     function(err, _requestData){
 
       requestData = _requestData;
