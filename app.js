@@ -10,6 +10,11 @@ var bodyParser = require('body-parser');
 var session = require('express-session');
 var MongoStore = require('connect-mongostore')(session);
 
+var cors = require('cors');
+var corsOptions = {
+  origin: 'http://192.168.1.134:8100'
+};
+
 var home = require('./app/routes/home');
 var users = require('./app/routes/users');
 var auth = require('./app/routes/auth');
@@ -36,6 +41,24 @@ app.use(favicon());
 app.use(logger('dev'));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded());
+
+
+var corsSettings = {
+  credentials: true,
+  methods: ['GET', 'PUT',' POST', 'OPTIONS'],
+  origin: function(origin, callback) {
+    if (!origin) return callback(null, false);
+     if ( origin.indexOf('127.0.0.1') || origin.indexOf('localhost') ){
+       callback(null, true);
+     } else {
+       callback(true, false);
+     }
+  }
+};
+
+app.use(cors(corsSettings));
+
+
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 

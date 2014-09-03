@@ -11,12 +11,14 @@ var requestData, accessData;
 
 router.get('/', function(req, res) {
   var dis = new Discogs();
+  console.log(process.env);
   dis.getRequestToken(
     process.env.DISCOGS_KEY,
     process.env.DISCOGS_SECRET,
     process.env.DISCOGS_CALLBACK,
 
-    function(err, _requestData){
+    function(err, _requestData) {
+      console.log(_requestData);
 
       requestData = _requestData;
 
@@ -30,20 +32,21 @@ router.get('/', function(req, res) {
 
 router.get('/callback', function(req, res) {
   var dis = new Discogs();
-    dis.getAccessToken(
-      requestData,
-      req.query.oauth_verifier, // Verification code sent back by Discogs
-      function(err, _accessData) {
+  console.log('callback!');
+  dis.getAccessToken(
+    requestData,
+    req.query.oauth_verifier, // Verification code sent back by Discogs
+    function(err, _accessData) {
 
-        req.session.DISCOGS_ACCESS = accessData = _accessData;
-        var dis = new Discogs(req.session.DISCOGS_ACCESS);
-        dis.identity(function(err, data){
-          req.session.username = data.username;
-          res.redirect('/me/collection');
-        });
+      req.session.DISCOGS_ACCESS = accessData = _accessData;
+      var dis = new Discogs(req.session.DISCOGS_ACCESS);
+      dis.identity(function(err, data){
+        req.session.username = data.username;
+        res.redirect('/me/collection');
+      });
 
-      }
-    );
+    }
+  );
 });
 
 
