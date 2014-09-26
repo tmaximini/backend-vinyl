@@ -54,8 +54,6 @@ router.get('/discogs', function(req, res) {
       var oauthToken = qs.parse(body);
       var params = qs.stringify({ oauth_token: oauthToken.oauth_token });
 
-      requestData = oauthToken;
-
       // Step 2. Redirect to the authorization screen.
       res.redirect(authenticateUrl + '?' + params);
     });
@@ -70,9 +68,6 @@ router.get('/discogs', function(req, res) {
     // Step 3. Exchange oauth token and oauth verifier for access token.
     request.post({ url: accessTokenUrl, oauth: accessTokenOauth }, function(err, response, profile) {
       profile = qs.parse(profile);
-
-      console.log('step3', response, profile);
-      requestData = response;
 
       // Step 4a. Link user accounts.
       if (req.headers.authorization) {
