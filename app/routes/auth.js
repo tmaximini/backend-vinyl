@@ -30,7 +30,7 @@ router.get('/', function(req, res) {
 });
 
 
-router.get('/callback', function(req, res) {
+router.get('/discogs', function(req, res) {
   var dis = new Discogs();
   console.log('callback!');
   dis.getAccessToken(
