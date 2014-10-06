@@ -4,6 +4,7 @@ var path = require('path');
 var qs = require('querystring');
 
 var Discogs = require('disconnect').Client;
+var OAuth = require('oauth-1.0a');
 var express = require('express');
 var router = express.Router();
 var jwt = require('jwt-simple');
@@ -61,6 +62,7 @@ router.post('/auth/signup', function(req, res) {
  |--------------------------------------------------------------------------
  */
 
+
 router.get('/discogs', function(req, res) {
 
   var requestTokenUrl = 'http://api.discogs.com/oauth/request_token';
@@ -81,7 +83,7 @@ router.get('/discogs', function(req, res) {
     request.post({ url: requestTokenUrl, oauth: requestTokenOauth }, function(err, response, body) {
       var oauthToken = qs.parse(body);
 
-      oauthTokenSecret = oauthToken.oauth_token_secretM
+      oauthTokenSecret = oauthToken.oauth_token_secret;
 
       var params = qs.stringify(oauthToken);
 
@@ -90,15 +92,13 @@ router.get('/discogs', function(req, res) {
     });
   } else {
 
-    // Get time
-    var curtime = Date.now();
-
     var accessTokenOauth = {
       oauth_consumer_key: process.env.DISCOGS_KEY,
       oauth_nonce: crypto.pseudoRandomBytes(32).toString('hex'),
       oauth_signature_method: 'HMAC-SHA1',
-      oauth_timestamp: Math.floor(curtime / 1000),
+      oauth_timestamp: Date.now(),
       oauth_token: req.query.oauth_token,
+      oauth_verifier: req.query.oauth_verifier,
       oauth_version: '1.0'
     };
 
@@ -115,12 +115,24 @@ router.get('/discogs', function(req, res) {
       .update(out)
       .digest('base64');
 
+
+    var oa = new OAuth({consumer: { public: process.env.DISCOGS_KEY, secret: process.env.DISCOGS_SECRET }});
+    var authObj = oa.authorize({ method: 'POST', url: accessTokenUrl }, { public: accessTokenOauth.oauth_token, secret: oauthTokenSecret });
+
+
+
+
+
+
+    //var auth_header = oa.toHeader(authObj).Authorization;
+
     var auth_header = 'OAuth ' + Object.keys(accessTokenOauth).sort().map(function (key) {
       return key + '="' + encodeURIComponent(accessTokenOauth[key]) + '"';
-    }).join(', ');
+    }).join(',');
 
+    //console.log('auth object: ', auth_header);
 
-    console.log('HEADA: ', auth_header);
+    //console.log('HEADA: ', auth_header);
 
     var headers = {
       'User-Agent': 'Satellizer/Vinyl',
@@ -131,7 +143,7 @@ router.get('/discogs', function(req, res) {
     };
 
     // Step 3. Exchange oauth token and oauth verifier for access token.
-    request.post({ url: accessTokenUrl, headers: headers }, function(err, response, body) {
+    request.post({ url: accessTokenUrl, form: accessTokenOauth, headers: headers }, function(err, response, body) {
 
       if (err) {
         console.error('error', err);
