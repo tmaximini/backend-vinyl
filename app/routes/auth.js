@@ -29,7 +29,7 @@ function createToken(req, user) {
     iat: moment().unix(),
     exp: moment().add(14, 'days').unix()
   };
-  return jwt.encode(payload, process.env.TOKEN_SECRET);
+  return jwt.encode(payload, process.env.JWT_TOKEN_SECRET);
 }
 
 /*
@@ -58,10 +58,30 @@ router.post('/auth/signup', function(req, res) {
 
 /*
  |--------------------------------------------------------------------------
+ | Log in with Email
+ |--------------------------------------------------------------------------
+ */
+router.post('/auth/login', function(req, res) {
+  User.findOne({ email: req.body.email }, '+password', function(err, user) {
+    if (!user) {
+      return res.status(401).send({ message: 'Wrong email and/or password' });
+    }
+
+    user.comparePassword(req.body.password, function(err, isMatch) {
+      if (!isMatch) {
+        return res.status(401).send({ message: 'Wrong email and/or password' });
+      }
+      res.send({ token: createToken(user) });
+    });
+  });
+});
+
+
+/*
+ |--------------------------------------------------------------------------
  | OAuth 1.0 DISCOGS
  |--------------------------------------------------------------------------
  */
-
 
 router.get('/discogs', function(req, res) {
 
@@ -69,8 +89,6 @@ router.get('/discogs', function(req, res) {
   var accessTokenUrl = 'http://api.discogs.com/oauth/access_token';
   var authenticateUrl = 'http://www.discogs.com/oauth/authorize';
   var userApiUrl = 'https://api.discogs.com';
-
-  var oauthTokenSecret;
 
   if (!req.query.oauth_token || !req.query.oauth_verifier) {
     var requestTokenOauth = {
@@ -81,16 +99,18 @@ router.get('/discogs', function(req, res) {
 
     // Step 1. Obtain request token for the authorization popup.
     request.post({ url: requestTokenUrl, oauth: requestTokenOauth }, function(err, response, body) {
-      var oauthToken = qs.parse(body);
+      var queryParams = qs.parse(body);
 
-      oauthTokenSecret = oauthToken.oauth_token_secret;
+      req.session.oauthTokenSecret = queryParams.oauth_token_secret;
+      req.session.oauthToken = queryParams.oauth_token;
 
-      var params = qs.stringify(oauthToken);
+      var params = qs.stringify(queryParams);
 
       // Step 2. Redirect to the authorization screen.
       res.redirect(authenticateUrl + '?' + params);
     });
   } else {
+
 
     var accessTokenOauth = {
       oauth_consumer_key: process.env.DISCOGS_KEY,
@@ -98,52 +118,21 @@ router.get('/discogs', function(req, res) {
       oauth_signature_method: 'HMAC-SHA1',
       oauth_timestamp: Date.now(),
       oauth_token: req.query.oauth_token,
-      oauth_verifier: req.query.oauth_verifier,
       oauth_version: '1.0'
     };
 
-
-    var out = [].concat(
-      ['POST', accessTokenUrl],
-      (Object.keys(accessTokenOauth).sort().map(function (k) {
-        return encodeURIComponent(k) + '=' + encodeURIComponent(accessTokenOauth[k]);
-      }).join('&'))
-    ).map(encodeURIComponent).join('&');
-
-    accessTokenOauth.oauth_signature = crypto
-      .createHmac('sha1', [process.env.DISCOGS_SECRET, oauthTokenSecret].join('&'))
-      .update(out)
-      .digest('base64');
-
-
     var oa = new OAuth({consumer: { public: process.env.DISCOGS_KEY, secret: process.env.DISCOGS_SECRET }});
-    var authObj = oa.authorize({ method: 'POST', url: accessTokenUrl }, { public: accessTokenOauth.oauth_token, secret: oauthTokenSecret });
-
-
-
-
-
-
-    //var auth_header = oa.toHeader(authObj).Authorization;
-
-    var auth_header = 'OAuth ' + Object.keys(accessTokenOauth).sort().map(function (key) {
-      return key + '="' + encodeURIComponent(accessTokenOauth[key]) + '"';
-    }).join(',');
-
-    //console.log('auth object: ', auth_header);
-
-    //console.log('HEADA: ', auth_header);
+    var authObj = oa.authorize({ method: 'POST', url: accessTokenUrl+'?oauth_verifier='+req.query.oauth_verifier }, { public: req.query.oauth_token, secret: req.session.oauthTokenSecret });
+    var auth_header = oa.toHeader(authObj).Authorization;
 
     var headers = {
       'User-Agent': 'Satellizer/Vinyl',
       'Content-Type': 'application/x-www-form-urlencoded',
-      'Accept': 'application/json; application/octet-stream',
-      'Accept-Encoding': 'gzip,deflate',
       'Authorization': auth_header
     };
 
     // Step 3. Exchange oauth token and oauth verifier for access token.
-    request.post({ url: accessTokenUrl, form: accessTokenOauth, headers: headers }, function(err, response, body) {
+    request.post({ url: accessTokenUrl, headers: headers }, function(err, response, body) {
 
       if (err) {
         console.error('error', err);
@@ -152,7 +141,7 @@ router.get('/discogs', function(req, res) {
 
       var profile = qs.parse(body);
 
-      console.log('step3', body);
+      console.log('step3', profile);
 
       // Step 4a. Link user accounts.
       if (req.headers.authorization) {
@@ -162,7 +151,7 @@ router.get('/discogs', function(req, res) {
           }
 
           var token = req.headers.authorization.split(' ')[1];
-          var payload = jwt.decode(token, process.env.TOKEN_SECRET || 'A hard to guess string');
+          var payload = jwt.decode(token, process.env.JWT_TOKEN_SECRET || 'A hard to guess string');
 
           console.log('step4a', payload);
 
@@ -195,7 +184,6 @@ router.get('/discogs', function(req, res) {
     });
   }
 });
-
 
 
 module.exports = router;
