@@ -9,6 +9,9 @@ var router = express.Router();
 var jwt = require('jwt-simple');
 var moment = require('moment');
 var request = require('request');
+var crypto = require('crypto');
+require('request-debug')(request);
+
 var User = require('../models/user');
 
 var debug = require('debug')('backend-vinyl');
@@ -28,19 +31,44 @@ function createToken(req, user) {
   return jwt.encode(payload, process.env.TOKEN_SECRET);
 }
 
+/*
+ |--------------------------------------------------------------------------
+ | Create Email and Password Account
+ |--------------------------------------------------------------------------
+ */
+router.post('/auth/signup', function(req, res) {
+  User.findOne({ email: req.body.email }, function(err, existingUser) {
+    if (existingUser) {
+      return res.status(409).send({ message: 'Email is already taken' });
+    }
+
+    var user = new User({
+      displayName: req.body.displayName,
+      email: req.body.email,
+      password: req.body.password
+    });
+
+    user.save(function() {
+      res.send({ token: createToken(req, user) });
+    });
+  });
+});
+
 
 /*
  |--------------------------------------------------------------------------
- | ROUTING
+ | OAuth 1.0 DISCOGS
  |--------------------------------------------------------------------------
  */
 
 router.get('/discogs', function(req, res) {
 
   var requestTokenUrl = 'http://api.discogs.com/oauth/request_token';
-  var accessTokenUrl = 'hhttp://api.discogs.com/oauth/access_token';
+  var accessTokenUrl = 'http://api.discogs.com/oauth/access_token';
   var authenticateUrl = 'http://www.discogs.com/oauth/authorize';
   var userApiUrl = 'https://api.discogs.com';
+
+  var oauthTokenSecret;
 
   if (!req.query.oauth_token || !req.query.oauth_verifier) {
     var requestTokenOauth = {
@@ -52,22 +80,67 @@ router.get('/discogs', function(req, res) {
     // Step 1. Obtain request token for the authorization popup.
     request.post({ url: requestTokenUrl, oauth: requestTokenOauth }, function(err, response, body) {
       var oauthToken = qs.parse(body);
-      var params = qs.stringify({ oauth_token: oauthToken.oauth_token });
+
+      oauthTokenSecret = oauthToken.oauth_token_secretM
+
+      var params = qs.stringify(oauthToken);
 
       // Step 2. Redirect to the authorization screen.
       res.redirect(authenticateUrl + '?' + params);
     });
   } else {
+
+    // Get time
+    var curtime = Date.now();
+
     var accessTokenOauth = {
-      consumer_key: process.env.DISCOGS_KEY,
-      consumer_secret: process.env.DISCOGS_SECRET,
-      token: req.query.oauth_token,
-      verifier: req.query.oauth_verifier
+      oauth_consumer_key: process.env.DISCOGS_KEY,
+      oauth_nonce: crypto.pseudoRandomBytes(32).toString('hex'),
+      oauth_signature_method: 'HMAC-SHA1',
+      oauth_timestamp: Math.floor(curtime / 1000),
+      oauth_token: req.query.oauth_token,
+      oauth_version: '1.0'
+    };
+
+
+    var out = [].concat(
+      ['POST', accessTokenUrl],
+      (Object.keys(accessTokenOauth).sort().map(function (k) {
+        return encodeURIComponent(k) + '=' + encodeURIComponent(accessTokenOauth[k]);
+      }).join('&'))
+    ).map(encodeURIComponent).join('&');
+
+    accessTokenOauth.oauth_signature = crypto
+      .createHmac('sha1', [process.env.DISCOGS_SECRET, oauthTokenSecret].join('&'))
+      .update(out)
+      .digest('base64');
+
+    var auth_header = 'OAuth ' + Object.keys(accessTokenOauth).sort().map(function (key) {
+      return key + '="' + encodeURIComponent(accessTokenOauth[key]) + '"';
+    }).join(', ');
+
+
+    console.log('HEADA: ', auth_header);
+
+    var headers = {
+      'User-Agent': 'Satellizer/Vinyl',
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': 'application/json; application/octet-stream',
+      'Accept-Encoding': 'gzip,deflate',
+      'Authorization': auth_header
     };
 
     // Step 3. Exchange oauth token and oauth verifier for access token.
-    request.post({ url: accessTokenUrl, oauth: accessTokenOauth }, function(err, response, profile) {
-      profile = qs.parse(profile);
+    request.post({ url: accessTokenUrl, headers: headers }, function(err, response, body) {
+
+      if (err) {
+        console.error('error', err);
+        res.send(err);
+      }
+
+      var profile = qs.parse(body);
+
+      console.log('step3', body);
 
       // Step 4a. Link user accounts.
       if (req.headers.authorization) {
@@ -78,6 +151,8 @@ router.get('/discogs', function(req, res) {
 
           var token = req.headers.authorization.split(' ')[1];
           var payload = jwt.decode(token, process.env.TOKEN_SECRET || 'A hard to guess string');
+
+          console.log('step4a', payload);
 
           User.findById(payload.sub, function(err, user) {
             if (!user) {
@@ -97,8 +172,9 @@ router.get('/discogs', function(req, res) {
             return res.send({ token: createToken(req, existingUser) });
           }
           var user = new User();
-          user.twitter = profile.user_id;
+          user.discogs = profile.user_id;
           user.displayName = profile.screen_name;
+          console.log('step4b', user);
           user.save(function(err) {
             res.send({ token: createToken(req, user) });
           });
