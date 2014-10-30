@@ -17,6 +17,13 @@ var User = require('../models/user');
 
 var debug = require('debug')('backend-vinyl');
 
+function mergeObjects(target, source) {
+  for (var key in source) {
+    target[key] = source[key];
+  }
+  return target;
+};
+
 /*
  |--------------------------------------------------------------------------
  | Generate JSON Web Token
@@ -83,12 +90,14 @@ router.post('/auth/login', function(req, res) {
  |--------------------------------------------------------------------------
  */
 
-router.get('/discogs', function(req, res) {
+router.get('/discogs', function(req, res, next) {
 
   var requestTokenUrl = 'http://api.discogs.com/oauth/request_token';
   var accessTokenUrl = 'http://api.discogs.com/oauth/access_token';
   var authenticateUrl = 'http://www.discogs.com/oauth/authorize';
-  var userApiUrl = 'https://api.discogs.com';
+  var discogsApi = 'https://api.discogs.com';
+
+  console.log('YEAH');
 
   if (!req.query.oauth_token || !req.query.oauth_verifier) {
     var requestTokenOauth = {
@@ -111,7 +120,6 @@ router.get('/discogs', function(req, res) {
     });
   } else {
 
-
     var accessTokenOauth = {
       oauth_consumer_key: process.env.DISCOGS_KEY,
       oauth_nonce: crypto.pseudoRandomBytes(32).toString('hex'),
@@ -121,7 +129,7 @@ router.get('/discogs', function(req, res) {
       oauth_version: '1.0'
     };
 
-    var oa = new OAuth({consumer: { public: process.env.DISCOGS_KEY, secret: process.env.DISCOGS_SECRET }});
+    var oa = new OAuth({ consumer: { public: process.env.DISCOGS_KEY, secret: process.env.DISCOGS_SECRET }});
     var authObj = oa.authorize({ method: 'POST', url: accessTokenUrl+'?oauth_verifier='+req.query.oauth_verifier }, { public: req.query.oauth_token, secret: req.session.oauthTokenSecret });
     var auth_header = oa.toHeader(authObj).Authorization;
 
@@ -134,51 +142,71 @@ router.get('/discogs', function(req, res) {
     // Step 3. Exchange oauth token and oauth verifier for access token.
     request.post({ url: accessTokenUrl, headers: headers }, function(err, response, body) {
 
+      var _body = qs.parse(body);
+
+      // update headers
+      var newHead = mergeObjects(accessTokenOauth, _body);
+      authObj = oa.authorize({ method: 'GET', url: discogsApi + '/oauth/identity'}, { public: _body.oauth_token, secret: _body.oauth_token_secret })
+
+      headers.Authorization = oa.toHeader(authObj).Authorization;;
+
+      var profile;
       if (err) {
         console.error('error', err);
         res.send(err);
-      }
-
-      var profile = qs.parse(body);
-
-      console.log('step3', profile);
-
-      // Step 4a. Link user accounts.
-      if (req.headers.authorization) {
-        User.findOne({ discogs: profile.user_id }, function(err, existingUser) {
-          if (existingUser) {
-            return res.status(409).send({ message: 'There is already a Discogs account that belongs to you' });
-          }
-
-          var token = req.headers.authorization.split(' ')[1];
-          var payload = jwt.decode(token, process.env.JWT_TOKEN_SECRET || 'A hard to guess string');
-
-          console.log('step4a', payload);
-
-          User.findById(payload.sub, function(err, user) {
-            if (!user) {
-              return res.status(400).send({ message: 'User not found' });
-            }
-            user.discogs = profile.user_id;
-            user.displayName = user.displayName || profile.screen_name;
-            user.save(function(err) {
-              res.send({ token: createToken(req, user) });
-            });
-          });
-        });
       } else {
-        // Step 4b. Create a new user account or return an existing one.
-        User.findOne({ discogs: profile.user_id }, function(err, existingUser) {
-          if (existingUser) {
-            return res.send({ token: createToken(req, existingUser) });
+        var options = {
+          url: discogsApi + '/oauth/identity',
+          headers: headers
+        };
+        request(options, function(err, response, body) {
+
+          if (err) {
+            console.error(err);
+            next(new Error(err));
           }
-          var user = new User();
-          user.discogs = profile.user_id;
-          user.displayName = profile.screen_name;
-          console.log('step4b', user);
-          user.save(function(err) {
-            res.send({ token: createToken(req, user) });
-          });
+
+          console.log('identity:', body);
+          profile = qs.parse(body);
+
+          // Step 4a. Link user accounts.
+          if (req.headers.authorization) {
+            User.findOne({ username: profile.username }, function(err, existingUser) {
+              if (existingUser) {
+                return res.status(409).send({ message: 'There is already a Discogs account that belongs to you' });
+              }
+
+              var token = req.headers.authorization.split(' ')[1];
+              var payload = jwt.decode(token, process.env.JWT_TOKEN_SECRET || 'A hard to guess string');
+
+              console.log('step4a', payload);
+
+              User.findById(payload.sub, function(err, user) {
+                if (!user) {
+                  return res.status(400).send({ message: 'User not found' });
+                }
+                user.discogs = profile;
+                user.displayName = profile.username;
+                user.save(function(err) {
+                  res.send({ token: createToken(req, user) });
+                });
+              });
+            });
+          } else {
+            // Step 4b. Create a new user account or return an existing one.
+            User.findOne({ username: profile.username }, function(err, existingUser) {
+              if (existingUser) {
+                return res.send({ token: createToken(req, existingUser) });
+              }
+              var user = new User();
+              user.discogs = profile;
+              user.displayName = profile.username;
+              console.log('step4b', user);
+              user.save(function(err) {
+                res.send({ token: createToken(req, user) });
+              });
+            });
+          }
         });
       }
     });
