@@ -5,11 +5,13 @@ var Discogs = require('disconnect').Client;
 var LRU = require('lru-cache');
 var cache = new LRU(); // options?
 
+var wantListDummy = require('../fixtures/wantlist');
+var collectionDummy = require('../fixtures/collection');
 
 /* GET home page. */
 router
   .get('/', function(req, res) {
-    res.render('index', { title: 'Express' });
+    res.send(wantListDummy);
   })
   .get('/me', function(req, res) {
     if (!req.session.DISCOGS_ACCESS) {
