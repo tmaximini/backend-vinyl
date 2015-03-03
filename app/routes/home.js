@@ -5,15 +5,19 @@ var Discogs = require('disconnect').Client;
 var LRU = require('lru-cache');
 var cache = new LRU(); // options?
 
-var wantListDummy = require('../fixtures/wantlist');
+var wantlistDummy = require('../fixtures/wantlist');
 var collectionDummy = require('../fixtures/collection');
+var userDummy = require('../fixtures/user');
 
 /* GET home page. */
 router
   .get('/', function(req, res) {
-    res.send(wantListDummy);
+    res.json(wantlistDummy);
   })
+
+
   .get('/me', function(req, res) {
+    // res.json(userDummy);
     if (!req.session.DISCOGS_ACCESS) {
       res.json({ error: 'not logged in' });
     }
@@ -28,7 +32,10 @@ router
       });
     }
   })
+
+
   .get('/me/collection', function(req, res) {
+    // res.json(collectionDummy);
     if (!req.session.DISCOGS_ACCESS) {
       res.redirect('/auth');
     }
@@ -39,14 +46,16 @@ router
     } else {
       var dis = new Discogs(req.session.DISCOGS_ACCESS);
       var collection = dis.user().collection();
-      collection.releases(req.session.username, 0, { page: req.params.page || 0, per_page: req.params.perPage || 75}, function(err, data) {
+      collection.releases(req.session.username, 0, { page: req.query.page || 0, per_page: req.query.perPage || 75}, function(err, data) {
         cache.set(req.session.username + '.collection', data);
         res.send(data);
       });
     }
-
   })
+
+
   .get('/me/wantlist', function(req, res) {
+    // res.json(wantlistDummy);
     var fromCache = cache.get(req.session.username + '.wantlist');
     if (fromCache) {
       console.log('wantlist from cache: ', fromCache);
@@ -54,7 +63,7 @@ router
     } else {
       var dis = new Discogs(req.session.DISCOGS_ACCESS);
       var wantlist = dis.user().wantlist();
-      wantlist.releases(req.session.username, { page: req.params.page || 0, per_page: req.params.perPage || 75}, function(err, data) {
+      wantlist.releases(req.session.username, { page: req.query.page || 0, per_page: req.query.perPage || 75}, function(err, data) {
         cache.set(req.session.username + '.wantlist', data);
         res.send(data);
       });
