@@ -1,3 +1,4 @@
-exports.auth  = require('./auth')
-exports.home  = require('./home')
-exports.users = require('./users')
+exports.auth  = require('./auth');
+exports.api   = require('./api');
+exports.home  = require('./home');
+exports.users = require('./users');

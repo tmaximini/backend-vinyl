@@ -66,6 +66,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Routing
 app.use('/', routes.home);
+app.use('/api', routes.api);
 app.use('/users', routes.users);
 app.use('/auth', routes.auth);
 
