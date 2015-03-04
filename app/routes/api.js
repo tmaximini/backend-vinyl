@@ -5,18 +5,36 @@ var Discogs = require('disconnect').Client;
 var LRU = require('lru-cache');
 var cache = new LRU(); // options?
 
+var discogsDb = new Discogs().database();
+
+var checkForAuth = function(req, res) {
+  if (!req.session.DISCOGS_ACCESS) {
+    res.redirect('/auth');
+  }
+};
+
+var tryCache = function(cacheString, res) {
+  var fromCache = cache.get(cacheString);
+  if (fromCache) {
+    console.log('from cache: ', fromCache);
+    return res.send(fromCache);
+  } else {
+    return false;
+  }
+};
+
 router
+
+
+  /**
+   * COLLECTION
+   */
+
   .get('/collection', function(req, res) {
-    if (!req.session.DISCOGS_ACCESS) {
-      res.redirect('/auth');
-    }
-    var requestedPage = req.query.page || 0;
+    checkForAuth(req, res);
+    var requestedPage = req.query.page || 1;
     var cacheString = req.session.username + '.collection.' + requestedPage;
-    var fromCache = cache.get(cacheString);
-    if (fromCache) {
-      console.log('from cache: ', fromCache);
-      res.send(fromCache);
-    } else {
+    if (!tryCache(cacheString, res)) {
       var dis = new Discogs(req.session.DISCOGS_ACCESS);
       var collection = dis.user().collection();
       collection.releases(req.session.username, 0, { page: requestedPage, per_page: req.query.perPage || 75 }, function(err, data) {
@@ -26,21 +44,18 @@ router
     }
   })
 
+  /**
+   * WANTLIST
+   */
 
   .get('/wantlist', function(req, res) {
-    if (!req.session.DISCOGS_ACCESS) {
-      res.redirect('/auth');
-    }
-    var requestedPage = req.query.page || 0;
+    checkForAuth(req, res);
+    var requestedPage = req.query.page || 1;
     var cacheString = req.session.username + '.wantlist.' + requestedPage;
-    var fromCache = cache.get(cacheString);
-    if (fromCache) {
-      console.log('wantlist from cache: ', fromCache);
-      res.send(fromCache);
-    } else {
+    if (!tryCache(cacheString, res)) {
       var dis = new Discogs(req.session.DISCOGS_ACCESS);
       var wantlist = dis.user().wantlist();
-      wantlist.releases(req.session.username, { page: requestedPage || 0, per_page: req.query.perPage || 75}, function(err, data) {
+      wantlist.releases(req.session.username, { page: requestedPage, per_page: req.query.perPage || 75 }, function(err, data) {
         cache.set(cacheString, data);
         res.send(data);
       });
@@ -48,20 +63,63 @@ router
   })
 
 
+  /**
+   * RELEASES
+   */
+
   .get('/releases/:releaseId', function(req, res) {
-    if (!req.session.DISCOGS_ACCESS) {
-      res.redirect('/auth');
-    }
     var cacheString = 'release.' + req.params.releaseId;
     var fromCache = cache.get(cacheString);
-    if (fromCache) {
-      console.log('release from cache: ', fromCache);
-      res.send(fromCache);
-    } else {
-      var dis = new Discogs().database();
-      dis.release(req.params.releaseId, function(err, release) {
+    if (!tryCache(cacheString, res)) {
+      discogsDb.release(req.params.releaseId, function(err, release) {
         cache.set(cacheString, release);
         res.send(release);
+      });
+    }
+  })
+
+  /**
+   * ARTISTS
+   */
+
+  .get('/artists/:artistId', function(req, res) {
+    var cacheString = 'artist.' + req.params.artistId;
+    var fromCache = cache.get(cacheString);
+    if (!tryCache(cacheString, res)) {
+      discogsDb.artist(req.params.artistId, function(err, artist) {
+        cache.set(cacheString, artist);
+        res.send(artist);
+      });
+    }
+  })
+
+  /**
+   * ARTIST RELEASES
+   */
+
+  .get('/artists/:artistId/releases', function(req, res) {
+    var requestedPage = req.query.page || 1;
+    var cacheString = 'artist.' + req.params.artistId + 'releases.' + requestedPage;
+    var fromCache = cache.get(cacheString);
+    if (!tryCache(cacheString, res)) {
+      discogsDb.artistReleases(req.params.artistId, { page: requestedPage }, function(err, releases) {
+        cache.set(cacheString, releases);
+        res.send(releases);
+      });
+    }
+  })
+
+  /**
+   * LABELS
+   */
+
+  .get('/labels/:labelId', function(req, res) {
+    var cacheString = 'label.' + req.params.labelId;
+    var fromCache = cache.get(cacheString);
+    if (!tryCache(cacheString, res)) {
+      discogsDb.label(req.params.labelId, function(err, label) {
+        cache.set(cacheString, label);
+        res.send(label);
       });
     }
   })
