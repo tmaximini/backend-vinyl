@@ -25,9 +25,13 @@ function storeUserData(data, res, cb) {
 router
 
   .get('/', function(req, res) {
-    var dis = new Discogs();
-    console.log(process.env);
-    dis.getRequestToken(
+    res.redirect('/auth/login');
+  })
+
+  .get('/login', function(req, res) {
+    var oauth = new Discogs().oauth();
+    // console.log(process.env);
+    oauth.getRequestToken(
       process.env.DISCOGS_KEY,
       process.env.DISCOGS_SECRET,
       process.env.DISCOGS_CALLBACK,
@@ -57,9 +61,9 @@ router
 
 
   .get('/discogs', function(req, res) {
-    var dis = new Discogs();
+    var oauth = new Discogs().oauth();
     console.log('callback!');
-    dis.getAccessToken(
+    oauth.getAccessToken(
       requestData,
       req.query.oauth_verifier, // Verification code sent back by Discogs
       function(err, _accessData) {

@@ -7,12 +7,19 @@ var cache = new LRU(); // options?
 
 var discogsDb = new Discogs().database();
 
+// redirect user in case we have no Discogs access
 var checkForAuth = function(req, res) {
   if (!req.session.DISCOGS_ACCESS) {
-    res.redirect('/auth');
+    res.redirect('/auth/login');
   }
 };
 
+/**
+ * checks if we can resolve the request already from cache
+ * @param  {Stroing} cacheString
+ * @param  {Object}  res        - the response object in case we resolve
+ * @return {Boolean}
+ */
 var tryCache = function(cacheString, res) {
   var fromCache = cache.get(cacheString);
   if (fromCache) {
