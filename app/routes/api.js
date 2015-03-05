@@ -51,6 +51,20 @@ router
     }
   })
 
+  // add release to Collection
+  .put('/collection/add', function(req, res) {
+    checkForAuth(req, res);
+    var dis = new Discogs(req.session.DISCOGS_ACCESS);
+    var collection = dis.user().collection();
+    collection.addRelease(req.session.username, 0, req.body.releaseId, function(err, data) {
+      console.log('added release to collection: ', release, data);
+      if (!err) {
+        res.send(data);
+      }
+    });
+  })
+
+
   /**
    * WANTLIST
    */
@@ -67,6 +81,19 @@ router
         res.send(data);
       });
     }
+  })
+
+  // add release to Wantlist
+  .put('/wantlist/add', function(req, res) {
+    checkForAuth(req, res);
+    var dis = new Discogs(req.session.DISCOGS_ACCESS);
+    var wantlist = dis.user().wantlist();
+    wantlist.addRelease(req.session.username, req.body.releaseId, function(err, data) {
+      console.log('added release to wantlist: ', release, data);
+      if (!err) {
+        res.send(data);
+      }
+    });
   })
 
 
