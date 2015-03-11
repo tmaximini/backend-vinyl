@@ -66,6 +66,7 @@ router
             discogs_username: data.username,
             discogs_access: req.session.DISCOGS_ACCESS
           };
+          req.session.username = data.username;
           storeUserData(userData, res, function() {
             res.redirect('/api/collection');
           });
