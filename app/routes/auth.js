@@ -10,10 +10,9 @@ var debug = require('debug')('backend-vinyl');
 var requestData, accessData;
 
 function storeUserData(data, res, cb) {
-  var user = new User(data);
-  user.save(function(err, savedUser) {
+  User.update({ name: data.name, discogs_username: data.discogs_username } , data, { upsert: true }, function(err, rowsAffected, savedUser) {
     if (!err) {
-      console.log('user saved: ', savedUser);
+      console.log('user upserted: ', savedUser);
       cb();
     } else {
       console.error(err);
@@ -37,34 +36,19 @@ router
       process.env.DISCOGS_CALLBACK,
 
       function(err, _requestData) {
-        console.log(_requestData);
-
-        requestData = _requestData;
-
         // Persist "requestData" here so that the callback handler can
         // access it later after returning from the authorize url
+        requestData = _requestData;
         res.redirect(_requestData.authorizeUrl);
       }
     );
   })
 
-  // dummy function to check MongoDB connectivity
-  .get('/callback', function(req, res) {
 
-    var userData = {
-      name: 'Bernd',
-      discogs_username: 'bernd',
-      email: 'bernd@gmail.com'
-    };
-    storeUserData(userData, res);
-  })
-
-
-  .get('/discogs', function(req, res) {
-    var oauth = new Discogs().oauth();
-    console.log('callback!');
+  .get('/discogs', function(req, res, next) {
+    var oauth = new Discogs(requestData).oauth();
+    console.log('callback!', req.query.oauth_verifier);
     oauth.getAccessToken(
-      requestData,
       req.query.oauth_verifier, // Verification code sent back by Discogs
       function(err, _accessData) {
         console.log('_accessData: ', _accessData);
@@ -72,7 +56,10 @@ router
         req.session.DISCOGS_ACCESS = accessData = _accessData;
         var dis = new Discogs(req.session.DISCOGS_ACCESS);
         dis.identity(function(err, data) {
-
+          if (err) {
+            return next(new Error(err));
+          } else {
+            console.log('data: ', data);
           // authentication was successful
           var userData = {
             name: data.username,
@@ -80,9 +67,9 @@ router
             discogs_access: req.session.DISCOGS_ACCESS
           };
           storeUserData(userData, res, function() {
-            res.redirect('/me/collection');
+            res.redirect('/api/collection');
           });
-
+          }
         });
       }
     );
